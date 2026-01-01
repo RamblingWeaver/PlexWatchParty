@@ -12,6 +12,12 @@ Plex Watch Party enables people to watch the same Plex media together from diffe
 - Schedule a brief (10-minute) pause after the first hour of playback. Additional intermissions occur hourly only if more than 30 minutes of playback remain after the pause.
 - Passkey-based client authorization with external validation.
 
+**Compatibility**
+- The client integration stands on the library [Pyton-PlexAPI](https://github.com/pushingkarmaorg/python-plexapi).
+- The support devices are those that are listed as receivers in [Supported Plex Companion Apps](https://support.plex.tv/articles/203082707-supported-plex-companion-apps/).
+- If your device is compatible and it's not showing up, look for the "Advertise as player" setting and make sure it is on.
+- It is recommended to increase your pause limit to 15 minutes to allow your session to stay alive during the 10 minute intermissions. Settings > Network > Terminate Sessions Paused for Longer Than.
+
 Read below for the technical details (client/server deepdive and running instructions).
 
 **Client Overview**
