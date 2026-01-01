@@ -9,20 +9,21 @@ This module provides a FastAPI application with a WebSocket endpoint at
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import logging
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
 import httpx
-
-from .config import settings
 from .websocket_manager import WebSocketManager, Connection
 from .orchestrator import Orchestrator
 from .models import WSCommand, ClientStatus
+from . import config
 
 logger = logging.getLogger(__name__)
 
 # singletons for now; in production these can be injected
 ws_manager = WebSocketManager()
 orchestrator = Orchestrator(ws_manager=ws_manager)
+
+# load settings at module import so the FastAPI app can use them
+settings = config.get_settings()
 
 
 @asynccontextmanager
@@ -47,7 +48,7 @@ async def verify_passkey(username: str, passkey: str) -> None:
         HTTPException: 500 if validation URL is not configured, or 401 for
             missing/invalid credentials.
     """
-    # Validation endpoint is required now that shared-passkey was removed
+    # Validation endpoint is required
     if not settings.passkey_validation_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="passkey validation not configured")
 
@@ -86,9 +87,45 @@ async def websocket_endpoint(websocket: WebSocket):
     listens for JSON messages of types `register` and `status_update`.
     """
 
-    # Expect query params: username and passkey — both are required
-    username = websocket.query_params.get("username")
-    passkey = websocket.query_params.get("passkey")
+    # If configured, require secure websocket (wss) connections. Check the
+    # ASGI scope `scheme` and common proxy header `x-forwarded-proto` for
+    # evidence the connection was secured by TLS. If enforcement is enabled
+    # and we don't detect HTTPS/WSS, reject the connection.
+    try:
+        require_wss = bool(settings.require_wss)
+    except Exception:
+        require_wss = False
+
+    if require_wss:
+        # safe retrieval of scope values
+        try:
+            scope_scheme = websocket.scope.get('scheme') if getattr(websocket, 'scope', None) else None
+        except Exception:
+            scope_scheme = None
+        xfp = websocket.headers.get('x-forwarded-proto') if getattr(websocket, 'headers', None) else None
+        if not ((scope_scheme == 'wss') or (xfp and xfp.split(',')[0].strip().lower() == 'https')):
+            try:
+                await websocket.close(code=1008)
+            except Exception:
+                pass
+            return
+
+    # Expect authentication via headers to avoid leaking secrets in URLs.
+    # Clients should send `Authorization: Bearer <passkey>` and
+    # `X-Username: <username>` headers on the WebSocket handshake.
+    username = None
+    passkey = None
+    try:
+        # websocket.headers behaves like a dict-like object
+        username = websocket.headers.get("x-username")
+        auth_hdr = websocket.headers.get("authorization")
+        if auth_hdr and isinstance(auth_hdr, str) and auth_hdr.lower().startswith("bearer "):
+            passkey = auth_hdr.split(None, 1)[1]
+    except Exception:
+        # any header parsing error -> treat as missing
+        username = None
+        passkey = None
+
     # Require both username and passkey at connect time; refuse otherwise.
     if not username or not passkey:
         try:

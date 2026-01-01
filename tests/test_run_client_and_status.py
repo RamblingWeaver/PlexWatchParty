@@ -68,8 +68,8 @@ def test_run_client_sends_registration(monkeypatch):
     monkeypatch.setattr(client_module, "get_plex_client_by_name", lambda n: client_a if n == "Local" else client_b)
 
     container = {}
-    # Patch websockets.connect to return our context manager
-    monkeypatch.setattr(client_module.websockets, "connect", lambda url: CM(container))
+    # Patch websockets.connect to return our context manager (accept any args/kwargs)
+    monkeypatch.setattr(client_module.websockets, "connect", lambda *args, **kwargs: CM(container))
 
     # Short-circuit the loops so run_client completes quickly
     async def quick_recv(ws):

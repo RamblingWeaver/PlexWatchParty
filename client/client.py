@@ -391,13 +391,17 @@ async def run_client():
     else:
         ws_base = server_url_str
 
-    url = f"{ws_base}/ws?username={settings.username}&passkey={settings.passkey}"
+    url = f"{ws_base}/ws"
     logger.info("Connecting to server %s", settings.server_url)
 
     # Keep attempting to connect; on failure or disconnect wait 5s and retry.
     while True:
         try:
-            async with websockets.connect(url) as ws:
+            headers = [
+                ("Authorization", f"Bearer {settings.passkey}"),
+                ("X-Username", settings.username),
+            ]
+            async with websockets.connect(url, additional_headers=headers) as ws:
                 # Discover local Plex clients and populate cache
                 fetch_plex_clients()
 

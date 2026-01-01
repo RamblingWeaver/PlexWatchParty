@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 import pydle
 
-from .config import settings
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ class IRCClient(pydle.Client):
         self.ws_manager: WebSocketManager = orchestrator.ws
 
     async def on_connect(self):
+        settings = config.get_settings()
         if settings.irc_channel:
             await self.join(settings.irc_channel)
             logger.info("Joined IRC channel %s", settings.irc_channel)
@@ -74,6 +75,7 @@ class IRCClient(pydle.Client):
 
 
 async def start_irc(orchestrator):
+    settings = config.get_settings()
     if not settings.irc_server or not settings.irc_channel:
         logging.info("IRC not configured; skipping IRC startup")
         return None

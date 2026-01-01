@@ -9,9 +9,9 @@ from server.websocket_manager import WebSocketManager
 
 
 class FakeWS:
-    def __init__(self, queries, messages):
-        # queries: dict of query params
-        self.query_params = queries
+    def __init__(self, headers, messages):
+        # headers: dict of handshake headers
+        self.headers = headers
         self._messages = list(messages)
         self.accepted = False
         self.closed = False
@@ -66,7 +66,7 @@ async def test_websocket_endpoint_register_and_status(monkeypatch):
         {"type": "register", "authorized_clients": [{"title": "Local", "id": "m1"}]},
         {"type": "status_update", "filename": "f.mp4", "current_offset": 1234},
     ]
-    fake = FakeWS({"username": "u", "passkey": "p"}, msgs)
+    fake = FakeWS({"x-username": "u", "authorization": "Bearer p", "x-forwarded-proto": "https"}, msgs)
 
     await api.websocket_endpoint(fake)
 
