@@ -1,0 +1,12 @@
+fastapi>=0.95.0
+uvicorn[standard]>=0.22.0
+websockets>=11.0
+plexapi>=4.4.0
+pydantic>=2.0
+pytest>=7.0
+pytest-asyncio>=0.21
+httpx>=0.24
+pydle>=0.9.7
+python-dotenv>=1.0
+typing_extensions
+pydantic-settings>=0.2

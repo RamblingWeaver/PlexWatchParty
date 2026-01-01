@@ -1,0 +1,9 @@
+"""Test configuration for interactive runs.
+
+Put test-specific filename and filekey constants here so they can be
+referenced by `interactive_test.py` and other tooling.
+"""
+
+FILENAME = "Get.Out.2017.2160p.UHD..."
+ADDRESS = "127.0.0.1"
+PORT = 8000

@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Interactive Server Tester",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/interactive_server.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {"PYTHONPATH": "${workspaceFolder}"}
+    },
+    {
+      "name": "Run Client Connect",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/interactive_test.py",
+      "console": "integratedTerminal",
+      "args": ["--connect"],
+      "cwd": "${workspaceFolder}",
+      "env": {"PYTHONPATH": "${workspaceFolder}"},
+      "envFile": "${workspaceFolder}/client/.env",
+      "justMyCode": true
+    }
+  ]
+  ,
+  "compounds": [
+    {
+      "name": "Run Server + Client",
+      "configurations": ["Run Interactive Server Tester", "Run Client Connect"]
+    },
+  ]
+}
