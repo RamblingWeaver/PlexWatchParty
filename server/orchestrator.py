@@ -2,7 +2,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
-import uuid
+import secrets
+import string
 import logging
 from .models import Session, Participant, PauseInterval, WSCommand, CommandType, Device
 from .websocket_manager import WebSocketManager
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 def now() -> datetime:
+    """Return current UTC time with tzinfo set.
+
+    Small helper to centralize timezone-aware now() calls.
+    """
     return datetime.now(timezone.utc)
 
 
@@ -54,7 +59,15 @@ class Orchestrator:
                     setattr(session, attr, None)
 
     async def create_session(self, filename: str, duration_ms: int, scheduled_start_time: datetime) -> Session:
-        session = Session(session_id=str(uuid.uuid4()), filename=filename, duration_ms=int(duration_ms), scheduled_start_time=scheduled_start_time, start_time=None)
+        # Generate a short, user-friendly session id (6 chars, alphanumeric).
+        # Ensure uniqueness while holding the orchestrator lock to avoid races.
+        alphabet = string.ascii_lowercase + string.digits
+        async with self._lock:
+            while True:
+                sid = "".join(secrets.choice(alphabet) for _ in range(6))
+                if sid not in self._sessions:
+                    break
+            session = Session(session_id=sid, filename=filename, duration_ms=int(duration_ms), scheduled_start_time=scheduled_start_time, start_time=None)
         logger.info("Creating session %s filename=%s scheduled_start=%s duration_ms=%s", session.session_id, filename, scheduled_start_time.isoformat(), duration_ms)
         # define the scheduled-start coroutine (does not depend on local session var)
         async def _run_start(session_id: str):
@@ -138,10 +151,22 @@ class Orchestrator:
         the `Participant` under the session, and, if the session has
         already started, sends a PLAY to the new participant to catch them up.
         """
+        # Validate session exists and ensure the user is not already
+        # participating in any session (including this one). These checks
+        # are performed under the orchestrator lock to avoid races.
         async with self._lock:
             session = self._sessions.get(session_id)
             if not session:
                 raise KeyError("session not found")
+            # Prevent a user from joining multiple sessions or re-joining
+            # the same session: if the username appears in any session's
+            # participants mapping, reject the request.
+            for sid, s in self._sessions.items():
+                if username in s.participants:
+                    if sid == session_id:
+                        raise ValueError("user already joined this session")
+                    else:
+                        raise ValueError("user already in another session")
 
         # resolve the device object from authorized clients (do not await while holding lock)
         device_obj = None
@@ -180,6 +205,24 @@ class Orchestrator:
         # perform network IO outside the lock
         if cmd_to_send:
             await self.ws.broadcast(username, cmd_to_send)
+
+    async def remove_participant(self, session_id: str, username: str) -> None:
+        """Remove a participant from a session.
+
+        Raises:
+            KeyError: if the session does not exist.
+            ValueError: if the user is not a participant of the session.
+        """
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if not session:
+                raise KeyError("session not found")
+            if username not in session.participants:
+                raise ValueError("user not in session")
+            # remove participant and any pending prequeue entry
+            session.participants.pop(username, None)
+            if username in session.prequeue:
+                session.prequeue.remove(username)
 
     async def start_session(self, session_id: str) -> None:
         """Start a scheduled session and send initial PLAY commands.
@@ -341,11 +384,7 @@ class Orchestrator:
                 paused_ms += int((current_time - p.start).total_seconds() * 1000)
         return max(0, elapsed_ms - paused_ms)
 
-    async def list_sessions(self) -> List[str]:
-        async with self._lock:
-            return [s.filename for s in self._sessions.values()]
-
-    async def handle_client_status_update(self, username: Optional[str], filename: str, offset: int, receive_time: datetime, threshold_ms: int = 5000):
+    async def handle_client_status_update(self, username: Optional[str], filename: str, offset: int, threshold_ms: int = 8000):
         """Handle a status update reported by a client.
 
         If the client's reported `offset` differs from the server's computed
@@ -358,21 +397,16 @@ class Orchestrator:
         if username is None:
             return
 
-        adjusted_offset = None
         for session in sessions:
             if session.filename != filename:
                 continue
             if username not in session.participants:
                 continue
 
-            # Adjust the reported offset by the time elapsed since the
-            # status update was received so comparisons use a closer
-            # approximation of the client's playback position.
+            # Compare server-computed offset to client-reported offset and send SEEK if they differ
             server_offset = self._calculate_offset(session, now())
-            delta_ms = int((now() - receive_time).total_seconds() * 1000)
-            adjusted_offset = offset + delta_ms
             try:
-                if abs(int(adjusted_offset) - int(server_offset)) > int(threshold_ms):
+                if abs(int(offset) - int(server_offset)) > int(threshold_ms):
                     participant = session.participants.get(username)
                     if participant is None:
                         continue
@@ -382,4 +416,4 @@ class Orchestrator:
             except Exception:
                 logger.exception("Error handling status update for %s", username)
 
-        return adjusted_offset
+        return

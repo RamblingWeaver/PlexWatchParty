@@ -15,6 +15,7 @@ from .websocket_manager import WebSocketManager, Connection
 from .orchestrator import Orchestrator
 from .models import WSCommand, ClientStatus
 from . import config
+from .irc_bot import start_irc
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,22 @@ settings = config.get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- startup: do nothing ---
+    # --- startup: start optional IRC bot ---
+    irc_client = None
+    try:
+        irc_client = await start_irc(orchestrator)
+    except Exception:
+        logger.exception("Failed to start IRC bot")
+
     yield
-    # --- shutdown ---
+
+    # --- shutdown: disconnect IRC client (if any) and stop background tasks ---
+    if irc_client is not None:
+        try:
+            await irc_client.disconnect()
+        except Exception:
+            logger.exception("Failed to disconnect IRC client")
+
     await orchestrator.stop_background_tasks()
 
 
@@ -164,8 +178,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     except Exception:
                         logger.exception("Failed to set authorized clients for %s", username)
                 elif data.get("type") == "status_update":
-                    # capture the receive time once for both orchestration and storage
-                    receive_time = datetime.now(timezone.utc)
                     # client status updates include filename and current_offset
                     filename = data.get("filename")
                     raw_offset = data.get("current_offset") or 0
@@ -182,9 +194,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             # First, let the orchestrator process the status update
                             # before mutating connection state to avoid holding the
                             # connection lock while orchestration may perform work.
-                            adjusted = await orchestrator.handle_client_status_update(
-                                username=username, filename=filename, offset=offset, receive_time=receive_time
-                            )
+                            await orchestrator.handle_client_status_update(
+                                username=username, filename=filename, offset=offset)
                         except Exception:
                             logger.exception("Failed to handle status update for %s", username)
 
@@ -193,7 +204,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             client_status = ClientStatus(
                                 username=username,
                                 filename=filename,
-                                current_offset=adjusted if adjusted is not None else offset,
+                                current_offset=offset,
                                 last_update_time=datetime.now(timezone.utc),
                             )
                             await conn.set_status(client_status)

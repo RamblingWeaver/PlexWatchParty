@@ -116,11 +116,11 @@ async def test_handle_client_status_update_none_or_not_participant():
     session = await orch.create_session("s.mp4", duration_ms=10000, scheduled_start_time=scheduled)
 
     # username None should be ignored
-    await orch.handle_client_status_update(None, "s.mp4", 0, receive_time=now())
+    await orch.handle_client_status_update(None, "s.mp4", 0)
     assert not ws.broadcast_calls
 
     # non-participant username should be ignored
-    await orch.handle_client_status_update("nobody", "s.mp4", 0, receive_time=now())
+    await orch.handle_client_status_update("nobody", "s.mp4", 0)
     assert not ws.broadcast_calls
 
 
@@ -143,6 +143,6 @@ async def test_handle_client_status_update_within_threshold_no_seek():
 
     # report offset approximately equal to server offset
     server_offset = orch._calculate_offset(s, now())
-    await orch.handle_client_status_update("alice", s.filename, server_offset, receive_time=now(), threshold_ms=5000)
+    await orch.handle_client_status_update("alice", s.filename, server_offset, threshold_ms=5000)
     # no seek should be sent
     assert not ws.broadcast_calls

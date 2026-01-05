@@ -119,7 +119,7 @@ async def test_handle_client_status_update_triggers_seek():
     session.start_time = now() - timedelta(seconds=10)
 
     # call handler with offset 0 and small threshold so SEEK will be sent
-    await orch.handle_client_status_update(username="alice", filename="seekfile.mp4", offset=0, receive_time=now(), threshold_ms=1)
+    await orch.handle_client_status_update(username="alice", filename="seekfile.mp4", offset=0, threshold_ms=1)
     assert ws.broadcast_calls, "expected SEEK broadcast to be sent"
     u, cmd = ws.broadcast_calls[-1]
     assert u == "alice"
